@@ -29,6 +29,26 @@ Use this skill when linking two SugarCRM modules (custom or OOB) via a 1:M or M:
 - Multi-instance relationships (same lhs+rhs pair more than once, e.g., Orders relate to Accounts as both BillTo and ShipTo) require a unique `<rel>` per instance and role-label-per-instance in the language file
 - Custom relationship names should NOT end with `_c` — table names do; relationship names are different
 
+## Decision step BEFORE generating files: subpanels per side
+
+For every relationship, decide explicitly: **does each side want a subpanel showing the related records on its detail view?**
+
+- **Parent side (lhs) — almost always YES.** If you're looking at a parent record (Account, Company, Order), users expect to see a list of its children (Contacts, Products, OrderLines). Without a subpanel, the relate field is installable but invisible — the related records have no UI surface anywhere.
+- **Child side (rhs) — usually NO.** The child already shows its parent via the relate-display field on the record view. A subpanel listing "the one parent" is redundant.
+
+The decision drives whether you ship the 3 subpanel files for that side:
+1. `relationships/layoutdefs/<rel>_<Module>.php` (legacy subpanel registration)
+2. `clients/base/layouts/subpanels/<rel>_<Module>.php` (Sidecar — modern UI)
+3. `clients/mobile/layouts/subpanels/<rel>_<Module>.php` (mobile counterpart)
+
+Skipping ANY of those three on a side that needs a subpanel = no subpanel shows up. Legacy layoutdef alone isn't enough — Sugar's modern Sidecar UI needs the `clients/base/...` file too. See `[[sugar-mlp-anatomy]]` for which `installdefs` section each routes to.
+
+When batch-generating relationships (e.g., from a Module Builder export, or via a generator script), run this checklist for each new relationship before moving on:
+
+- [ ] Is the parent (lhs) a record users will browse to view related children? → Ship subpanel files on lhs.
+- [ ] Does the child (rhs) need a back-reference list? Rarely. → Default: skip lhs-of-the-reverse subpanel.
+- [ ] If multi-instance (Orders↔Accounts BillTo/ShipTo): each instance needs its own set of subpanel files with distinct role labels — see `[[project-erp-role-label-map]]` patterns.
+
 ## The 7 files per relationship (MB-style)
 
 For a relationship named `accounts_foos_1` linking Accounts (lhs, parent) ↔ Foos (rhs, child):
@@ -243,7 +263,9 @@ $installdefs['language'][] = [
 
 | Symptom | Root cause | Fix |
 |---------|------------|-----|
-| Subpanel missing on lhs | Sidecar layout in `copy` instead of `sidecar` | Re-register under `installdefs['sidecar']` |
+| Subpanel completely absent on lhs (parent) | Skipped the 3 subpanel files for this relationship | Generate `layoutdefs/<rel>_<Lhs>.php` + `clients/base/layouts/subpanels/<rel>_<Lhs>.php` + `clients/mobile/layouts/subpanels/<rel>_<Lhs>.php`. Easy to miss when batch-generating relationships — always run the "decision step" checklist above. |
+| Subpanel registered but doesn't render in modern UI | Only legacy `layoutdef` written, Sidecar component file missing | Add `clients/base/layouts/subpanels/<rel>_<Module>.php` and register in `installdefs['sidecar']` |
+| Subpanel in legacy view but not Sidecar | Sidecar layout in `installdefs['copy']` instead of `installdefs['sidecar']` | Re-register under `installdefs['sidecar']` |
 | Relate field empty / no name | `id_name` doesn't match the actual id field name | Verify `<rel><lhs_lower>_ida` pattern |
 | Both subpanels show same label | Multi-instance role labels not differentiated | One relationship name per role + distinct language label |
 | Cannot save (FK constraint) | Wrong `relationship_role_column_value` when used | Match exactly the parent module name (PLURAL) |
